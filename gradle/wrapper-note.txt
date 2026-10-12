@@ -1,0 +1,1 @@
+Android Studio creates the Gradle wrapper jar on first sync (gradle-wrapper.properties is included).
