@@ -76,7 +76,15 @@ private fun RingScreen(onClose: () -> Unit) {
     val dismiss = { RingService.send(ctx, RingService.ACTION_DISMISS) }
     val journey = RingKind.isJourneyProblem(i.kind)
 
-    Surface(Modifier.fillMaxSize(), color = if (journey) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer) {
+    Surface(
+        Modifier.fillMaxSize().background(
+            androidx.compose.ui.graphics.Brush.verticalGradient(
+                listOf(if (journey) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.background),
+            ),
+        ),
+        color = androidx.compose.ui.graphics.Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
         Column(
             Modifier.fillMaxSize().padding(24.dp).systemBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -84,7 +92,7 @@ private fun RingScreen(onClose: () -> Unit) {
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 32.dp)) {
                 val now = remember(elapsed / 1000) { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date()) }
-                Text(now, fontSize = 64.sp, fontWeight = FontWeight.Light)
+                Text(now, fontSize = 72.sp, fontWeight = FontWeight.ExtraLight)
                 Spacer(Modifier.height(24.dp))
                 Text(i.title, fontSize = 30.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(8.dp))

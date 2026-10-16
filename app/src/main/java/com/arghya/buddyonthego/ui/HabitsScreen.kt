@@ -30,10 +30,13 @@ import com.arghya.buddyonthego.ServiceLocator
 import com.arghya.buddyonthego.data.Habit
 import com.arghya.buddyonthego.data.HabitLog
 import com.arghya.buddyonthego.data.K
+import com.arghya.buddyonthego.domain.StreakResult
 import com.arghya.buddyonthego.domain.Streaks
 import com.arghya.buddyonthego.reminder.ReminderScheduler
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+
+private class HabitStat(val done: Set<LocalDate>, val streak: StreakResult)
 
 private val habitColors = listOf(
     Color(0xFF5C60D6), Color(0xFFFFB300), Color(0xFF2E9E6B), Color(0xFFE5575B), Color(0xFF2A8FD1), Color(0xFF9B59B6),
@@ -50,18 +53,26 @@ fun HabitsScreen() {
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val today = LocalDate.now()
+    val stats = remember(habits, logs, grace, today) {
+        val byHabit = logs.groupBy { it.habitId }
+        habits.associate { h ->
+            val mine = byHabit[h.id].orEmpty()
+            val done = mine.filter { it.status == 0 }.map { LocalDate.parse(it.date) }.toSet()
+            val skipped = mine.filter { it.status == 1 }.map { LocalDate.parse(it.date) }.toSet()
+            h.id to HabitStat(done, Streaks.compute(h.scheduleType, h.daysMask, h.targetPerWeek, done, skipped, today, grace))
+        }
+    }
     var editing by remember { mutableStateOf<Habit?>(null) }
     var expanded by remember { mutableStateOf<Long?>(null) }
 
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { Text("Habits", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold) }
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = listPadding(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            item(key = "header") { ScreenHeader("Habits", "Build streaks") }
             if (habits.isEmpty()) item { CardBox { Text("Tap + to start a habit. One tap a day builds a streak.") } }
             items(habits, key = { it.id }) { h ->
-                val mine = logs.filter { it.habitId == h.id }
-                val done = mine.filter { it.status == 0 }.map { LocalDate.parse(it.date) }.toSet()
-                val skipped = mine.filter { it.status == 1 }.map { LocalDate.parse(it.date) }.toSet()
-                val streak = Streaks.compute(h.scheduleType, h.daysMask, h.targetPerWeek, done, skipped, today, grace)
+                val st = stats[h.id] ?: HabitStat(emptySet(), StreakResult(0, 0))
+                val done = st.done
+                val streak = st.streak
                 val color = habitColors[h.colorIndex % habitColors.size]
                 CardBox(Modifier.clickable { expanded = if (expanded == h.id) null else h.id }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -102,8 +113,8 @@ fun HabitsScreen() {
                 }
             }
         }
-        FloatingActionButton(onClick = { editing = Habit(id = 0) }, modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)) {
-            Icon(Icons.Default.Add, "Add habit")
+        GlowFab(Icons.Default.Add, "Add habit", Modifier.align(Alignment.BottomEnd).padding(end = 22.dp, bottom = listPadding().calculateBottomPadding())) {
+            editing = Habit(id = 0)
         }
     }
 

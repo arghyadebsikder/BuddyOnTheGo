@@ -53,11 +53,12 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
         AppScope.io.launch { Reschedule.all(ctx) }
     }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 32.dp)) {
-        item { Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = listPadding()) {
+        item(key = "header") { ScreenHeader("Settings", "Make it yours") }
 
         item {
             SectionTitle("Connectivity")
+            CardBox {
             SwitchRow("Online Mode", "Off: Buddy makes zero network requests. Alarms never need the internet.", online) { s.put(K.ONLINE, it) }
             SwitchRow("Place search", checked = rememberBool(K.ON_SEARCH, true), enabled = online) { s.put(K.ON_SEARCH, it) }
             SwitchRow("Resolve short map links", checked = rememberBool(K.ON_LINKS, true), enabled = online) { s.put(K.ON_LINKS, it) }
@@ -67,19 +68,23 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
             Feature.values().forEach { f -> Text("${f.label}: ${ServiceLocator.gate.bytesThisMonth(f) / 1024} KB", style = MaterialTheme.typography.bodySmall) }
             TextButton(onClick = { ServiceLocator.gate.resetCounters(); recheck++ }) { Text("Reset counters") }
             DisabledNote("Only these leave the phone: text you search for and a pasted short link. Never GPS fixes, alarms, habits or tasks.")
+            }
         }
 
         item {
             SectionTitle("Features")
+            CardBox {
             SwitchRow("Alarm clock", checked = rememberBool(K.MOD_ALARM, true)) { module(K.MOD_ALARM, it) }
             SwitchRow("GPS alarm and route guard", checked = rememberBool(K.MOD_GPS, true)) { module(K.MOD_GPS, it) }
             SwitchRow("Habit tracker", checked = rememberBool(K.MOD_HABIT, true)) { module(K.MOD_HABIT, it) }
             SwitchRow("To-do list", checked = rememberBool(K.MOD_TODO, true)) { module(K.MOD_TODO, it) }
             DisabledNote("Turning a feature off hides it and cancels its alarms. Your data stays saved.")
+            }
         }
 
         item {
             SectionTitle("Appearance and units")
+            CardBox {
             val theme = rememberInt(K.THEME, 0)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("System", "Light", "Dark").forEachIndexed { i, n -> FilterChip(selected = theme == i, onClick = { s.put(K.THEME, i) }, label = { Text(n) }) }
@@ -87,16 +92,20 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
             SwitchRow("Dynamic color (Android 12+)", "Off keeps the indigo and amber look", rememberBool(K.DYNAMIC, false), Build.VERSION.SDK_INT >= 31) { s.put(K.DYNAMIC, it) }
             SwitchRow("Distance in kilometers", "Off shows miles", rememberBool(K.UNITS_KM, true)) { s.put(K.UNITS_KM, it) }
             SwitchRow("12-hour clock", checked = rememberBool(K.H12, true)) { s.put(K.H12, it) }
+            }
         }
 
         item {
             SectionTitle("Alarms")
+            CardBox {
             Stepper("Ring auto-stop", rememberInt(K.AUTOSTOP_MIN, 10), 1, 30, 1, " min") { s.put(K.AUTOSTOP_MIN, it) }
             Stepper("Re-alert every", rememberInt(K.REALERT_SEC, 60), 15, 300, 15, " s") { s.put(K.REALERT_SEC, it) }
+            }
         }
 
         item {
             SectionTitle("GPS and routes")
+            CardBox {
             val mode = rememberInt(K.GPS_MODE, 1)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("Battery saver", "Balanced", "Precise").forEachIndexed { i, n -> FilterChip(selected = mode == i, onClick = { s.put(K.GPS_MODE, i) }, label = { Text(n) }) }
@@ -106,11 +115,14 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
             Stepper("GPS lost: ring after", rememberInt(K.LOST_RING, 15), 3, 60, 1, " min") { s.put(K.LOST_RING, it) }
             SwitchRow("Backup timer and watchdog", "Wakes you if tracking dies", rememberBool(K.BACKUP_TIMER, true)) { s.put(K.BACKUP_TIMER, it) }
             SwitchRow("Silent auto-resume after reboot (experimental)", "Not in this build. After a reboot, tap the Resume trip notification.", false, enabled = false) { }
+            }
         }
 
         item {
             SectionTitle("Habits")
+            CardBox {
             SwitchRow("One-day streak grace", checked = rememberBool(K.STREAK_GRACE, false)) { s.put(K.STREAK_GRACE, it) }
+            }
         }
 
         item {
@@ -133,6 +145,7 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
 
         item {
             SectionTitle("Data and backup")
+            CardBox {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick = {
                     scope.launch {
@@ -148,12 +161,15 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
                 }, modifier = Modifier.weight(1f)) { Text("Share backup") }
             }
             OutlinedButton(onClick = { importText = clipboard.getText()?.text.orEmpty(); importDialog = true }, modifier = Modifier.fillMaxWidth()) { Text("Import from clipboard") }
+            }
         }
 
         item {
             SectionTitle("About")
+            CardBox {
             Text("Buddy on the go 1.0.0", style = MaterialTheme.typography.bodyMedium)
             DisabledNote("Map data (when Online Mode is on) is from OpenStreetMap contributors. Privacy: Buddy has no account, no analytics and no ads. Nothing about your trips or alarms leaves your phone.")
+            }
         }
     }
 

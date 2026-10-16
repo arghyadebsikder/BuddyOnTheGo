@@ -9,9 +9,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.arghya.buddyonthego.ServiceLocator
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -57,14 +70,13 @@ object Fmt {
     }
 
     val dayLetters = listOf("M", "T", "W", "T", "F", "S", "S")
-}
 
-@Composable
-fun SectionTitle(text: String) {
-    Text(
-        text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 6.dp),
-    )
+    /** Splits a clock time into the big part and the small AM/PM part. */
+    fun parts(hour: Int, minute: Int, h12: Boolean): Pair<String, String> =
+        if (h12) {
+            val h = if (hour % 12 == 0) 12 else hour % 12
+            Pair(String.format(Locale.US, "%d:%02d", h, minute), if (hour < 12) "AM" else "PM")
+        } else Pair(String.format(Locale.US, "%02d:%02d", hour, minute), "")
 }
 
 @Composable
@@ -105,11 +117,70 @@ fun TimeDialog(initialHour: Int, initialMinute: Int, is24: Boolean, onDismiss: (
     )
 }
 
+
+/** Space the floating bottom bar and the status bar take, provided by the root layout. */
+val LocalPad = androidx.compose.runtime.compositionLocalOf { PaddingValues(0.dp) }
+
 @Composable
-fun CardBox(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
-    ) { Column(Modifier.padding(16.dp), content = content) }
+fun listPadding(): PaddingValues {
+    val p = LocalPad.current
+    return PaddingValues(20.dp, p.calculateTopPadding(), 20.dp, p.calculateBottomPadding())
+}
+
+@Composable
+fun SectionTitle(text: String) {
+    val look = LocalLook.current
+    Row(Modifier.padding(start = 4.dp, top = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(6.dp).clip(CircleShape).background(Brush.linearGradient(listOf(look.accentA, look.accentB))))
+        Spacer(Modifier.width(8.dp))
+        Text(text.uppercase(), style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 1.6.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+fun ScreenHeader(title: String, eyebrow: String) {
+    val look = LocalLook.current
+    Column(Modifier.padding(top = 8.dp, bottom = 6.dp)) {
+        Text(
+            eyebrow.uppercase(),
+            style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.4.sp, brush = Brush.linearGradient(listOf(look.accentA, look.accentB))),
+        )
+        Text(title, style = MaterialTheme.typography.headlineMedium)
+    }
+}
+
+@Composable
+fun GradientText(text: String, size: Int = 44, weight: FontWeight = FontWeight.ExtraLight) {
+    val look = LocalLook.current
+    Text(text, style = TextStyle(fontSize = size.sp, fontWeight = weight, letterSpacing = (-1).sp, brush = Brush.linearGradient(listOf(look.accentA, look.accentB))))
+}
+
+/** Frosted-glass card: soft gradient fill and a thin light border. No blur, so scrolling stays smooth. */
+@Composable
+fun CardBox(modifier: Modifier = Modifier, accent: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    val look = LocalLook.current
+    val shape = RoundedCornerShape(28.dp)
+    val border = if (accent) Brush.linearGradient(listOf(look.accentA.copy(alpha = 0.9f), look.accentB.copy(alpha = 0.9f)))
+    else Brush.linearGradient(listOf(look.borderHi, look.borderLo))
+    Column(
+        modifier.fillMaxWidth()
+            .clip(shape)
+            .background(Brush.verticalGradient(listOf(look.cardTop, look.cardBottom)))
+            .border(if (accent) 1.5.dp else 1.dp, border, shape)
+            .padding(18.dp),
+        content = content,
+    )
+}
+
+@Composable
+fun GlowFab(icon: ImageVector, description: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val look = LocalLook.current
+    Box(
+        modifier.size(62.dp)
+            .shadow(18.dp, CircleShape, ambientColor = look.accentB, spotColor = look.accentA)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(listOf(look.accentA, look.accentB)))
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, description, tint = Color(0xFF07091A), modifier = Modifier.size(28.dp)) }
 }

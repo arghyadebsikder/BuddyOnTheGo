@@ -160,12 +160,12 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
         }
     }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("Places and trips", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = listPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item(key = "header") { ScreenHeader("Places and trips", "Wake on place") }
 
         session?.let { s ->
-            item {
-                CardBox {
+            item(key = "trip") {
+                CardBox(accent = true) {
                     Text(if (s.type == TripController.TYPE_RECORD) "Recording route" else "Trip running", style = MaterialTheme.typography.titleMedium)
                     Text(s.name.ifBlank { "Trip" })
                     if (!s.distance.isNaN()) Text("${Fmt.dist(s.distance, km)} left")

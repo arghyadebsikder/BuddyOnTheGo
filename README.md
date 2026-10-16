@@ -9,6 +9,9 @@
 
 Run unit tests: `Run > app/src/test` (geometry, triggers, route guard, streaks, parsers, network isolation).
 
+## Smooth scrolling
+Debug builds are much slower than real ones (Compose is not optimized). In Android Studio open Build > Select Build Variant and pick **smooth**, then Run. It is the optimized build signed with the debug key. For the APK you share, use a proper signed release.
+
 ## What is in this build
 - Alarm clock: exact alarms (setAlarmClock), repeat days, skip next, snooze limits, gradual volume, hold/math/shake dismiss with easy-dismiss fallback, auto-stop with missed log, call delay, reboot/time-zone recovery.
 - Shared ring pipeline: foreground RingService on the alarm stream, full-screen RingActivity, re-alert, separate journey-alert channel and patterns.
@@ -23,4 +26,3 @@ Run unit tests: `Run > app/src/test` (geometry, triggers, route guard, streaks, 
 - Destinations are set with pasted coordinates/links, the Share sheet, saved places, Use my location, or online search.
 - Deviations from the plan, chosen to keep the code buildable: SharedPreferences instead of DataStore, manual service locator instead of Hilt, state-based tabs instead of Navigation Compose, targetSdk 35 (raise to 36 when your SDK has it), dynamic color off by default so the indigo/amber look shows.
 - This code was written without being compiled in this environment. Expect to fix a few compile errors on first sync; paste them back and they are quick to resolve. Real-phone testing (Xiaomi/Redmi/Realme battery rules) is still required.
-"# BuddyOnTheGo" 

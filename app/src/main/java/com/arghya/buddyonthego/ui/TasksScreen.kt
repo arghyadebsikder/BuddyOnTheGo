@@ -43,12 +43,13 @@ fun TasksScreen(snackbar: SnackbarHostState) {
     var onlyHigh by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Task?>(null) }
 
-    val filtered = all.filter {
-        (search.isBlank() || it.title.contains(search, true) || it.notes.contains(search, true)) && (!onlyHigh || it.priority == 2)
+    val filtered = remember(all, search, onlyHigh) {
+        all.filter { (search.isBlank() || it.title.contains(search, true) || it.notes.contains(search, true)) && (!onlyHigh || it.priority == 2) }
     }
-    val todayList = filtered.filter { !it.done && it.dueAt != null && !dateOf(it.dueAt).isAfter(today) }
-    val upcoming = filtered.filter { !it.done && (it.dueAt == null || dateOf(it.dueAt).isAfter(today)) }
-    val done = filtered.filter { it.done }
+    val todayList = remember(filtered, today) { filtered.filter { !it.done && it.dueAt != null && !dateOf(it.dueAt).isAfter(today) } }
+    val upcoming = remember(filtered, today) { filtered.filter { !it.done && (it.dueAt == null || dateOf(it.dueAt).isAfter(today)) } }
+    val done = remember(filtered) { filtered.filter { it.done } }
+    val pad = listPadding()
 
     fun complete(t: Task, checked: Boolean) {
         scope.launch {
@@ -91,9 +92,9 @@ fun TasksScreen(snackbar: SnackbarHostState) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(20.dp, pad.calculateTopPadding(), 20.dp, 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             item {
-                Text("Tasks", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+                ScreenHeader("Tasks", "Get it done")
                 OutlinedTextField(search, { search = it }, label = { Text("Search") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected = !onlyHigh, onClick = { onlyHigh = false }, label = { Text("All") })
@@ -105,7 +106,7 @@ fun TasksScreen(snackbar: SnackbarHostState) {
             if (upcoming.isNotEmpty()) { item { SectionTitle("Upcoming") }; items(upcoming, key = { "u${it.id}" }) { TaskRow(it) } }
             if (done.isNotEmpty()) { item { SectionTitle("Done") }; items(done, key = { "d${it.id}" }) { TaskRow(it) } }
         }
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = pad.calculateBottomPadding()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(quick, { quick = it }, placeholder = { Text("Quick add a task") }, singleLine = true, modifier = Modifier.weight(1f))
             FilledIconButton(enabled = quick.isNotBlank(), onClick = {
                 val title = quick.trim(); quick = ""

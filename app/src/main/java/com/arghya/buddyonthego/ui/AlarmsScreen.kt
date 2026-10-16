@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.arghya.buddyonthego.ServiceLocator
@@ -37,39 +38,44 @@ fun AlarmsScreen(snackbar: SnackbarHostState) {
     val h12 = rememberBool(K.H12, true)
     var editing by remember { mutableStateOf<Alarm?>(null) }
     var menuFor by remember { mutableStateOf<Long?>(null) }
-    val now by produceState(System.currentTimeMillis()) { while (true) { delay(20_000); value = System.currentTimeMillis() } }
-
-    val nextAlarm = alarms.filter { it.enabled }.mapNotNull { a -> AlarmScheduler.nextTriggerFor(a, now)?.let { a to it } }.minByOrNull { it.second }
+    val pad = listPadding()
 
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(
-            Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                Text("Alarms", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                if (nextAlarm != null) {
-                    Text("Rings in ${Fmt.duration(nextAlarm.second - now)}", color = MaterialTheme.colorScheme.secondary)
-                } else {
-                    Text("No alarm is set", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = pad, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            item(key = "hero") {
+                ScreenHeader("Alarms", "Wake on time")
+                Spacer(Modifier.height(10.dp))
+                NextAlarmHero(alarms)
             }
-            if (alarms.isEmpty()) item {
-                CardBox { Text("Tap + to add your first alarm. Setting a common alarm takes 3 taps.") }
+            if (alarms.isEmpty()) item(key = "empty") {
+                CardBox { Text("Tap + to add your first alarm. A common alarm takes 3 taps.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             items(alarms, key = { it.id }) { a ->
+                val (main, ampm) = Fmt.parts(a.hour, a.minute, h12)
                 CardBox(Modifier.combinedClickable(onClick = { editing = a }, onLongClick = { menuFor = a.id })) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(Fmt.time(a.hour, a.minute, h12), style = ClockStyle)
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(main, style = ClockStyle, color = if (a.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (ampm.isNotEmpty()) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(ampm, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 10.dp))
+                                }
+                            }
                             if (a.label.isNotBlank()) Text(a.label, style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                if (a.daysMask == 0) "Once" else if (a.daysMask == 127) "Every day"
-                                else Fmt.dayLetters.indices.filter { a.daysMask and (1 shl it) != 0 }
-                                    .joinToString(" ") { listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")[it] },
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            if (a.skipNextDate != null) Text("Skipping ${a.skipNextDate}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                            Spacer(Modifier.height(6.dp))
+                            if (a.daysMask == 0) Text("Once", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Fmt.dayLetters.forEachIndexed { i, d ->
+                                    val on = a.daysMask and (1 shl i) != 0
+                                    Text(
+                                        d, style = MaterialTheme.typography.labelLarge,
+                                        color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                    )
+                                }
+                            }
+                            if (a.skipNextDate != null) Text("Skipping ${a.skipNextDate}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
                         }
                         Switch(checked = a.enabled, onCheckedChange = { on ->
                             scope.launch {
@@ -79,7 +85,7 @@ fun AlarmsScreen(snackbar: SnackbarHostState) {
                             }
                         })
                     }
-                    DropdownMenu(expanded = menuFor == a.id, onDismissRequest = { menuFor = null }) {
+                    if (menuFor == a.id) DropdownMenu(expanded = true, onDismissRequest = { menuFor = null }) {
                         DropdownMenuItem(text = { Text("Duplicate") }, onClick = {
                             menuFor = null
                             scope.launch {
@@ -95,10 +101,10 @@ fun AlarmsScreen(snackbar: SnackbarHostState) {
                 }
             }
         }
-        FloatingActionButton(
-            onClick = { editing = Alarm(id = 0, hour = 7, minute = 0) },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-        ) { Icon(Icons.Default.Add, "Add alarm") }
+        GlowFab(
+            Icons.Default.Add, "Add alarm",
+            Modifier.align(Alignment.BottomEnd).padding(end = 22.dp, bottom = pad.calculateBottomPadding()),
+        ) { editing = Alarm(id = 0, hour = 7, minute = 0) }
     }
 
     editing?.let { a ->
@@ -201,6 +207,26 @@ private fun AlarmEditor(initial: Alarm, h12: Boolean, onDismiss: () -> Unit, onS
                 }
                 if (onDelete != null) TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) { Text("Delete alarm") }
             }
+        }
+    }
+}
+
+/** Own clock so the 20-second tick never recomposes the whole list while scrolling. */
+@Composable
+private fun NextAlarmHero(alarms: List<Alarm>) {
+    val h12 = rememberBool(K.H12, true)
+    val now by produceState(System.currentTimeMillis()) { while (true) { delay(20_000); value = System.currentTimeMillis() } }
+    val next = remember(alarms, now) {
+        alarms.filter { it.enabled }.mapNotNull { a -> AlarmScheduler.nextTriggerFor(a, now)?.let { a to it } }.minByOrNull { it.second }
+    }
+    CardBox(accent = next != null) {
+        Text("NEXT ALARM", style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (next != null) {
+            GradientText("in " + Fmt.duration(next.second - now), 40)
+            val (m, ap) = Fmt.parts(next.first.hour, next.first.minute, h12)
+            Text("Rings at $m $ap".trim() + if (next.first.label.isNotBlank()) "  -  ${next.first.label}" else "", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Text("No alarm is set", style = MaterialTheme.typography.headlineSmall)
         }
     }
 }

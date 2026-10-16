@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0.0"
+        versionName = "0.0.2"
         // Contact used in the User-Agent of OpenStreetMap-family requests (NET-6). Change it (Q1).
         buildConfigField("String", "CONTACT", "\"arghya@example.com\"")
     }
@@ -24,6 +24,13 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        // "smooth": optimized (R8) build signed with the debug key, for fast on-phone testing.
+        // Debug builds run Compose without optimization and feel laggy; test scrolling with this one.
+        create("smooth") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
         }
     }
     compileOptions {

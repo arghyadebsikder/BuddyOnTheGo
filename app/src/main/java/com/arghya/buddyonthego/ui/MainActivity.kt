@@ -9,6 +9,19 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
@@ -18,7 +31,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -110,28 +122,42 @@ private fun Root(confirmStop: Boolean, dismissConfirm: () -> Unit, sharedText: S
 
     LaunchedEffect(sharedText) { if (sharedText != null && gps) selected = Tab.PLACES.name }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = {
-            NavigationBar {
-                tabs.forEach { t ->
-                    NavigationBarItem(
-                        selected = t == current, onClick = { selected = t.name },
-                        icon = { Icon(t.icon, contentDescription = t.label) }, label = { Text(t.label) },
-                    )
+    val look = LocalLook.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val topInset = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    val bottomInset = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    val pad = PaddingValues(top = topInset + 8.dp, bottom = bottomInset + 12.dp + 68.dp + 20.dp)
+
+    Box(
+        Modifier.fillMaxSize()
+            .background(Brush.verticalGradient(listOf(look.bgTop, look.bgBottom)))
+            .drawBehind {
+                drawRect(Brush.radialGradient(listOf(look.glowA, Color.Transparent), center = Offset(size.width * 0.95f, 0f), radius = size.width * 0.95f))
+                drawRect(Brush.radialGradient(listOf(look.glowB, Color.Transparent), center = Offset(0f, size.height * 0.85f), radius = size.width * 0.9f))
+            },
+    ) {
+        CompositionLocalProvider(LocalPad provides pad) {
+            Box(Modifier.fillMaxSize()) {
+                when (current) {
+                    Tab.ALARMS -> AlarmsScreen(snackbar)
+                    Tab.PLACES -> PlacesScreen(snackbar, sharedText, consumeShared)
+                    Tab.HABITS -> HabitsScreen()
+                    Tab.TASKS -> TasksScreen(snackbar)
+                    Tab.SETTINGS -> SettingsScreen(snackbar)
                 }
             }
-        },
-    ) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize()) {
-            when (current) {
-                Tab.ALARMS -> AlarmsScreen(snackbar)
-                Tab.PLACES -> PlacesScreen(snackbar, sharedText, consumeShared)
-                Tab.HABITS -> HabitsScreen()
-                Tab.TASKS -> TasksScreen(snackbar)
-                Tab.SETTINGS -> SettingsScreen(snackbar)
-            }
         }
+        // Soft fade so content scrolls cleanly under the status bar and the floating bar.
+        Box(
+            Modifier.align(Alignment.TopCenter).fillMaxWidth().height(topInset + 20.dp)
+                .background(Brush.verticalGradient(listOf(look.bgTop, Color.Transparent))),
+        )
+        Box(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(bottomInset + 110.dp)
+                .background(Brush.verticalGradient(listOf(Color.Transparent, look.bgBottom))),
+        )
+        FloatingNav(tabs, current, { selected = it.name }, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset + 12.dp))
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset + 96.dp))
     }
 
     if (confirmStop) AlertDialog(
@@ -198,6 +224,38 @@ private fun Onboarding(onDone: () -> Unit) {
                     onDone()
                 }
             }) { Text(if (step < 4) "Next" else "Start") }
+        }
+    }
+}
+
+@Composable
+private fun FloatingNav(tabs: List<Tab>, current: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier) {
+    val look = LocalLook.current
+    val shape = RoundedCornerShape(34.dp)
+    Row(
+        modifier.padding(horizontal = 14.dp).fillMaxWidth().height(68.dp)
+            .shadow(20.dp, shape, ambientColor = look.accentB, spotColor = Color.Black)
+            .clip(shape).background(look.navBg)
+            .border(1.dp, Brush.linearGradient(listOf(look.borderHi, look.borderLo)), shape)
+            .padding(8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
+    ) {
+        tabs.forEach { t ->
+            val sel = t == current
+            Row(
+                Modifier.clip(RoundedCornerShape(26.dp))
+                    .background(if (sel) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent)
+                    .clickable(role = Role.Tab) { onSelect(t) }
+                    .padding(horizontal = if (sel) 12.dp else 10.dp, vertical = 10.dp)
+                    .animateContentSize(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(t.icon, t.label, tint = if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
+                if (sel) {
+                    Spacer(Modifier.width(5.dp))
+                    Text(t.label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                }
+            }
         }
     }
 }
