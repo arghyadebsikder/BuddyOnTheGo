@@ -13,8 +13,8 @@ android {
         applicationId = "com.arghya.buddyonthego"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.0.2"
+        versionCode = 3
+        versionName = "0.0.3"
         // Contact used in the User-Agent of OpenStreetMap-family requests (NET-6). Change it (Q1).
         buildConfigField("String", "CONTACT", "\"arghya@example.com\"")
     }

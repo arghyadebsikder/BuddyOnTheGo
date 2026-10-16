@@ -10,6 +10,10 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings as AS
 import androidx.compose.foundation.layout.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
@@ -27,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.arghya.buddyonthego.AppScope
+import com.arghya.buddyonthego.BuildConfig
+import com.arghya.buddyonthego.domain.ThemeSchedule
 import com.arghya.buddyonthego.ServiceLocator
 import com.arghya.buddyonthego.alarm.AlarmScheduler
 import com.arghya.buddyonthego.data.Alarm
@@ -64,9 +70,9 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
             SwitchRow("Resolve short map links", checked = rememberBool(K.ON_LINKS, true), enabled = online) { s.put(K.ON_LINKS, it) }
             SwitchRow("Wi-Fi only for large downloads", checked = rememberBool(K.WIFI_ONLY, true)) { s.put(K.WIFI_ONLY, it) }
             if (!online) DisabledNote("Turn on Online Mode to use the switches above.")
-            Text("Data used this month", style = MaterialTheme.typography.labelLarge)
+            Text("Data used this month", style = MaterialTheme.typography.titleSmall)
             Feature.values().forEach { f -> Text("${f.label}: ${ServiceLocator.gate.bytesThisMonth(f) / 1024} KB", style = MaterialTheme.typography.bodySmall) }
-            TextButton(onClick = { ServiceLocator.gate.resetCounters(); recheck++ }) { Text("Reset counters") }
+            BigButton("Reset counters", { ServiceLocator.gate.resetCounters(); recheck++ }, style = BtnStyle.Text, height = 48.dp)
             DisabledNote("Only these leave the phone: text you search for and a pasted short link. Never GPS fixes, alarms, habits or tasks.")
             }
         }
@@ -86,9 +92,38 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
             SectionTitle("Appearance and units")
             CardBox {
             val theme = rememberInt(K.THEME, 0)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("System", "Light", "Dark").forEachIndexed { i, n -> FilterChip(selected = theme == i, onClick = { s.put(K.THEME, i) }, label = { Text(n) }) }
+            val h12 = rememberBool(K.H12, true)
+            val dayStart = rememberInt(K.DAY_START, ThemeSchedule.DEFAULT_DAY)
+            val nightStart = rememberInt(K.NIGHT_START, ThemeSchedule.DEFAULT_NIGHT)
+            var pickDay by remember { mutableStateOf(false) }
+            var pickNight by remember { mutableStateOf(false) }
+            Text("Theme", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(8.dp))
+            ChipFlow {
+                listOf("Device", "Light", "Dark", "Auto").forEachIndexed { i, n -> BuddyChip(theme == i, n, { s.put(K.THEME, i) }) }
             }
+            Text(
+                when (theme) {
+                    1 -> "Always light."
+                    2 -> "Always dark."
+                    3 -> "Light by day, dark at night. Switches by itself at the times below."
+                    else -> "Follows your phone's dark mode."
+                },
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
+            )
+            if (theme == 3) {
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Day starts", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    BigButton(Fmt.minutes(dayStart, h12), { pickDay = true }, style = BtnStyle.Tonal, height = 48.dp)
+                }
+                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Night starts", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    BigButton(Fmt.minutes(nightStart, h12), { pickNight = true }, style = BtnStyle.Tonal, height = 48.dp)
+                }
+            }
+            if (pickDay) TimeDialog(dayStart / 60, dayStart % 60, !h12, { pickDay = false }, { hh, mm -> s.put(K.DAY_START, hh * 60 + mm); pickDay = false }, "Day starts")
+            if (pickNight) TimeDialog(nightStart / 60, nightStart % 60, !h12, { pickNight = false }, { hh, mm -> s.put(K.NIGHT_START, hh * 60 + mm); pickNight = false }, "Night starts")
             SwitchRow("Dynamic color (Android 12+)", "Off keeps the indigo and amber look", rememberBool(K.DYNAMIC, false), Build.VERSION.SDK_INT >= 31) { s.put(K.DYNAMIC, it) }
             SwitchRow("Distance in kilometers", "Off shows miles", rememberBool(K.UNITS_KM, true)) { s.put(K.UNITS_KM, it) }
             SwitchRow("12-hour clock", checked = rememberBool(K.H12, true)) { s.put(K.H12, it) }
@@ -98,6 +133,10 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
         item {
             SectionTitle("Alarms")
             CardBox {
+            SwitchRow(
+                "Open alarm full screen", "On: the alarm covers the screen. Off: it shows as a small banner you can tap.",
+                rememberBool(K.FULLSCREEN_ALARM, true),
+            ) { s.put(K.FULLSCREEN_ALARM, it) }
             Stepper("Ring auto-stop", rememberInt(K.AUTOSTOP_MIN, 10), 1, 30, 1, " min") { s.put(K.AUTOSTOP_MIN, it) }
             Stepper("Re-alert every", rememberInt(K.REALERT_SEC, 60), 15, 300, 15, " s") { s.put(K.REALERT_SEC, it) }
             }
@@ -107,8 +146,8 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
             SectionTitle("GPS and routes")
             CardBox {
             val mode = rememberInt(K.GPS_MODE, 1)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Battery saver", "Balanced", "Precise").forEachIndexed { i, n -> FilterChip(selected = mode == i, onClick = { s.put(K.GPS_MODE, i) }, label = { Text(n) }) }
+            ChipFlow {
+                listOf("Battery saver", "Balanced", "Precise").forEachIndexed { i, n -> BuddyChip(mode == i, n, { s.put(K.GPS_MODE, i) }) }
             }
             SwitchRow("Wrong-direction alarm", checked = rememberBool(K.WRONG_DIR, true)) { s.put(K.WRONG_DIR, it) }
             Stepper("GPS lost: quiet warning", rememberInt(K.LOST_QUIET, 3), 1, 30, 1, " min") { s.put(K.LOST_QUIET, it) }
@@ -122,6 +161,14 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
             SectionTitle("Habits")
             CardBox {
             SwitchRow("One-day streak grace", checked = rememberBool(K.STREAK_GRACE, false)) { s.put(K.STREAK_GRACE, it) }
+            val dndOn = remember(recheck) { com.arghya.buddyonthego.reminder.SoundGuard.hasPolicyAccess(ctx) }
+            Text(
+                if (dndOn) "Silent mode for timed tasks: allowed." else "Silent mode for timed tasks needs Do Not Disturb access. Without it, Silent only vibrates.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!dndOn) BigButton("Allow Do Not Disturb access", {
+                try { ctx.startActivity(Intent(AS.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { }
+            }, Modifier.fillMaxWidth().padding(top = 8.dp), BtnStyle.Tonal)
             }
         }
 
@@ -129,7 +176,7 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
             SectionTitle("Reliability check")
             recheck.hashCode()
             ReliabilityCard(ctx) { recheck++ }
-            Button(onClick = {
+            BigButton("Test my setup (alarm in 1 minute)", onClick = {
                 scope.launch {
                     val dao = ServiceLocator.db.alarmDao()
                     val t = LocalDateTime.now().plusMinutes(1)
@@ -138,7 +185,7 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
                     AlarmScheduler.schedule(ctx, a.copy(id = id))
                     snackbar.showSnackbar("Test alarm in about 1 minute. Lock your phone now.")
                 }
-            }, modifier = Modifier.fillMaxWidth()) { Text("Test my setup (alarm in 1 minute)") }
+            }, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
             BrandGuide()
         }
@@ -147,27 +194,28 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
             SectionTitle("Data and backup")
             CardBox {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = {
+                BigButton("Copy backup", onClick = {
                     scope.launch {
                         clipboard.setText(AnnotatedString(Backup.export()))
                         snackbar.showSnackbar("Backup copied to the clipboard.")
                     }
-                }, modifier = Modifier.weight(1f)) { Text("Copy backup") }
-                OutlinedButton(onClick = {
+                }, modifier = Modifier.weight(1f), style = BtnStyle.Outline)
+                BigButton("Share backup", onClick = {
                     scope.launch {
                         val send = Intent(Intent.ACTION_SEND).setType("application/json").putExtra(Intent.EXTRA_TEXT, Backup.export()).putExtra(Intent.EXTRA_SUBJECT, "Buddy backup.json")
                         ctx.startActivity(Intent.createChooser(send, "Share backup").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }
-                }, modifier = Modifier.weight(1f)) { Text("Share backup") }
+                }, modifier = Modifier.weight(1f), style = BtnStyle.Outline)
             }
-            OutlinedButton(onClick = { importText = clipboard.getText()?.text.orEmpty(); importDialog = true }, modifier = Modifier.fillMaxWidth()) { Text("Import from clipboard") }
+            Spacer(Modifier.height(8.dp))
+            BigButton("Import from clipboard", { importText = clipboard.getText()?.text.orEmpty(); importDialog = true }, Modifier.fillMaxWidth(), BtnStyle.Outline)
             }
         }
 
         item {
             SectionTitle("About")
             CardBox {
-            Text("Buddy on the go 1.0.0", style = MaterialTheme.typography.bodyMedium)
+            Text("Buddy on the go v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium)
             DisabledNote("Map data (when Online Mode is on) is from OpenStreetMap contributors. Privacy: Buddy has no account, no analytics and no ads. Nothing about your trips or alarms leaves your phone.")
             }
         }
@@ -178,16 +226,16 @@ fun SettingsScreen(snackbar: SnackbarHostState) {
         title = { Text("Import backup") },
         text = { Text("Add everything from the backup on the clipboard (${importText.length} characters) to this phone?") },
         confirmButton = {
-            TextButton(onClick = {
+            BigButton("Import", onClick = {
                 importDialog = false
                 scope.launch {
                     val msg = try { "Imported ${Backup.import(importText)} items." } catch (e: Exception) { "That is not a valid Buddy backup." }
                     Reschedule.all(ctx)
                     snackbar.showSnackbar(msg)
                 }
-            }) { Text("Import") }
+            }, height = 48.dp)
         },
-        dismissButton = { TextButton(onClick = { importDialog = false }) { Text("Cancel") } },
+        dismissButton = { BigButton("Cancel", { importDialog = false }, style = BtnStyle.Text, height = 48.dp) },
     )
 }
 
@@ -195,30 +243,56 @@ private data class Check(val title: String, val ok: Boolean, val fixLabel: Strin
 
 @Composable
 private fun ReliabilityCard(ctx: Context, onChanged: () -> Unit) {
-    val nm = NotificationManagerCompat.from(ctx)
     val am = ctx.getSystemService(AlarmManager::class.java)
     val pm = ctx.getSystemService(PowerManager::class.java)
-    val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
-    fun go(i: Intent) { try { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { ctx.startActivity(Intent(AS.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
+    val look = LocalLook.current
+    var tick by remember { mutableIntStateOf(0) }
+    // Check again every time the person comes back from a system settings page, so the dot turns green by itself.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tick++; onChanged() }
+
+    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        tick++
+        if (!granted) Perms.openNotificationSettings(ctx)
+    }
+    val locLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
+        tick++
+        if (res[Manifest.permission.ACCESS_FINE_LOCATION] != true) Perms.openAppSettings(ctx)
+    }
+    fun go(i: Intent) {
+        try { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { Perms.openAppSettings(ctx) }
+    }
+    tick.hashCode()
     val checks = listOf(
-        Check("Notifications allowed", nm.areNotificationsEnabled(), "Fix") { go(Intent(AS.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(AS.EXTRA_APP_PACKAGE, ctx.packageName)) },
+        Check("Notifications allowed", Perms.notificationsOn(ctx), "Allow") {
+            if (Build.VERSION.SDK_INT >= 33 && !Perms.notificationsBlocked(ctx)) {
+                Perms.markAskedNotifications()
+                notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else Perms.openNotificationSettings(ctx)
+        },
         Check("Exact alarms allowed", Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms(), "Fix") { if (Build.VERSION.SDK_INT >= 31) go(Intent(AS.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}"))) },
         Check("Full-screen alerts allowed", Build.VERSION.SDK_INT < 34 || ctx.getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent(), "Fix") { if (Build.VERSION.SDK_INT >= 34) go(Intent(AS.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:${ctx.packageName}"))) },
-        Check("Location permission", ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED, "Open") { go(Intent(AS.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}"))) },
-        Check("Location services on", lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER), "Open") { go(Intent(AS.ACTION_LOCATION_SOURCE_SETTINGS)) },
+        Check("Location permission", Perms.locationOn(ctx), "Allow") {
+            if (Perms.locationBlocked(ctx)) Perms.openAppSettings(ctx) else {
+                Perms.markAskedLocation()
+                locLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            }
+        },
+        Check("Location switched on", Perms.locationServicesOn(ctx), "Open") { Perms.openLocationSettings(ctx) },
         Check("Battery optimization exempt", pm.isIgnoringBatteryOptimizations(ctx.packageName), "Fix") { go(Intent(AS.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}"))) },
         Check("Phone battery saver off", !pm.isPowerSaveMode, "Open") { go(Intent(AS.ACTION_BATTERY_SAVER_SETTINGS)) },
     )
     CardBox {
+        val good = checks.count { it.ok }
+        Text("$good of ${checks.size} ready", style = MaterialTheme.typography.titleMedium, color = if (good == checks.size) look.success else MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(6.dp))
         checks.forEach { c ->
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(14.dp).background(if (c.ok) Color(0xFF2E9E6B) else Color(0xFFE5575B), CircleShape))
+            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(16.dp).background(if (c.ok) look.success else look.danger, CircleShape))
                 Spacer(Modifier.width(12.dp))
-                Text(c.title, Modifier.weight(1f))
-                if (!c.ok) TextButton(onClick = { c.fix() }) { Text(c.fixLabel) }
+                Text(c.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                if (!c.ok) BigButton(c.fixLabel, { c.fix() }, style = BtnStyle.Tonal, height = 44.dp)
             }
         }
-        TextButton(onClick = onChanged) { Text("Re-check") }
     }
 }
 
@@ -235,5 +309,5 @@ private fun BrandGuide() {
         brand.contains("huawei") || brand.contains("honor") -> "Huawei / Honor: set Buddy to Manage manually and allow Auto-launch, Secondary launch and Run in background."
         else -> "Allow Buddy to run in the background and exclude it from battery optimization."
     }
-    CardBox { Text("Phone guide (${Build.MANUFACTURER})", style = MaterialTheme.typography.titleSmall); Text(text, style = MaterialTheme.typography.bodyMedium) }
+    CardBox { Text("Phone guide (${Build.MANUFACTURER})", style = MaterialTheme.typography.titleMedium); Text(text, style = MaterialTheme.typography.bodyLarge) }
 }

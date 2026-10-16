@@ -16,7 +16,10 @@ object K {
     const val ON_LINKS = "online_links"
     const val WIFI_ONLY = "wifi_only"
 
-    const val THEME = "theme_mode" // 0 system, 1 light, 2 dark
+    const val THEME = "theme_mode" // 0 system, 1 light, 2 dark, 3 auto by time of day
+    const val DAY_START = "theme_day_start" // minutes from midnight, light theme starts
+    const val NIGHT_START = "theme_night_start" // minutes from midnight, dark theme starts
+    const val FULLSCREEN_ALARM = "alarm_full_screen" // alarm opens over the screen
     const val DYNAMIC = "dynamic_color"
     const val UNITS_KM = "units_km"
     const val H12 = "time_12h"

@@ -1,4 +1,4 @@
-# Buddy on the go (Android, Kotlin + Jetpack Compose)
+# Buddy on the go v0.0.3 (Android, Kotlin + Jetpack Compose)
 
 ## Build the APK
 1. Install the latest stable Android Studio (it bundles JDK 17+). In SDK Manager install **Android SDK Platform 35**.
@@ -11,6 +11,17 @@ Run unit tests: `Run > app/src/test` (geometry, triggers, route guard, streaks, 
 
 ## Smooth scrolling
 Debug builds are much slower than real ones (Compose is not optimized). In Android Studio open Build > Select Build Variant and pick **smooth**, then Run. It is the optimized build signed with the debug key. For the APK you share, use a proper signed release.
+
+## What is new in v0.0.3
+- Startup screen: content centred, animated welcome, permission cards that show Allowed / Not allowed / Open Settings and a success check, premium gold and midnight look.
+- Theme: Device, Light, Dark or Auto (light by day, dark at night, with your own day and night times).
+- Time picker: swipe drums (hour, minute, AM/PM) instead of the round clock, in alarms, habits, tasks and settings. AM/PM is part of the same text line, so it can no longer break.
+- Alarms: math difficulty (easy, medium, hard), "Tap" option, alarm can open full screen or only as a banner (Settings, Alarms). The notification Dismiss button now opens the ring screen when a challenge is set, so it cannot skip the challenge.
+- Keyboard: text boxes scroll above the keyboard; the bottom bar hides while typing; math uses an on-screen number pad.
+- Habits: no emoji. Start and finish time, a flowing running timeline, a started notification with live countdown, and a sound mode per task (General, Meeting = vibrate, Silent = Do Not Disturb with alarms still allowed). The sound goes back to normal when the task ends.
+- Tasks: drag to reorder, star for high priority (starred tasks sit on top), counters for High priority / Upcoming / Finished, confetti when everything is finished.
+- Bigger buttons and text throughout, press animations and haptics.
+- Database moves to version 2 with a migration that keeps all data.
 
 ## What is in this build
 - Alarm clock: exact alarms (setAlarmClock), repeat days, skip next, snooze limits, gradual volume, hold/math/shake dismiss with easy-dismiss fallback, auto-stop with missed log, call delay, reboot/time-zone recovery.

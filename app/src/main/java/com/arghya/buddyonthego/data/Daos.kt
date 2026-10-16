@@ -59,8 +59,11 @@ interface HabitDao {
 
 @Dao
 interface TaskDao {
-    @Query("SELECT * FROM tasks ORDER BY done, dueAt IS NULL, dueAt, priority DESC, id")
+    @Query("SELECT * FROM tasks ORDER BY done, sortOrder, id")
     fun observeAll(): Flow<List<Task>>
+    @Query("SELECT COALESCE(MAX(sortOrder), 0) FROM tasks") suspend fun maxSortOrder(): Long
+    @Query("UPDATE tasks SET sortOrder = :order WHERE id = :id") suspend fun setSortOrder(id: Long, order: Long)
+    @Query("UPDATE tasks SET priority = :priority WHERE id = :id") suspend fun setPriority(id: Long, priority: Int)
     @Query("SELECT * FROM tasks") suspend fun getAll(): List<Task>
     @Query("SELECT * FROM tasks WHERE id = :id") suspend fun get(id: Long): Task?
     @Upsert suspend fun upsert(t: Task): Long

@@ -11,6 +11,8 @@ import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.arghya.buddyonthego.R
+import com.arghya.buddyonthego.ServiceLocator
+import com.arghya.buddyonthego.data.K
 import com.arghya.buddyonthego.gps.GpsTrackingService
 import com.arghya.buddyonthego.ui.MainActivity
 
@@ -29,12 +31,35 @@ object RingKind {
     fun endsTrip(k: Int) = k == GPS_ARRIVAL || k == BACKUP || k == TRACKING_STOPPED
 }
 
+/** How a time alarm is switched off. The number is stored in Alarm.challengeType. */
+object Challenge {
+    const val HOLD = 0
+    const val MATH = 1
+    const val SHAKE = 2
+    const val TAP = 3
+
+    val names = listOf("Hold", "Math", "Shake", "Tap")
+    val hints = listOf(
+        "Hold a button for 2 seconds.",
+        "Solve a math problem on the ring screen.",
+        "Shake the phone 12 times.",
+        "Just tap Dismiss. No challenge.",
+    )
+
+    fun actionLabel(type: Int) = when (type) {
+        MATH -> "Solve to dismiss"
+        SHAKE -> "Shake to dismiss"
+        else -> "Hold to dismiss"
+    }
+}
+
 object Notifs {
     const val CH_RING = "ring"
     const val CH_JOURNEY = "journey"
     const val CH_TRIP = "trip"
     const val CH_REMIND = "reminders"
     const val CH_STATUS = "status"
+    const val CH_ACTIVE = "active"
 
     const val ID_RING = 1001
     const val ID_TRIP = 1002
@@ -42,6 +67,7 @@ object Notifs {
     const val ID_MISSED = 1004
     const val ID_QUIET = 1005
     const val ID_REMIND_BASE = 20000
+    const val ID_ACTIVE_BASE = 30000
 
     fun createChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -61,6 +87,7 @@ object Notifs {
         ch(CH_TRIP, "Trip in progress", NotificationManager.IMPORTANCE_LOW, "Ongoing countdown and progress")
         ch(CH_REMIND, "Reminders", NotificationManager.IMPORTANCE_DEFAULT, "Habit and task reminders")
         ch(CH_STATUS, "App status", NotificationManager.IMPORTANCE_LOW, "Warnings and status")
+        ch(CH_ACTIVE, "Task in progress", NotificationManager.IMPORTANCE_DEFAULT, "Shown while a timed habit or task is running")
     }
 
     private fun mutable(flags: Int = 0) = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT or flags
@@ -73,15 +100,13 @@ object Notifs {
     }
 
     fun ring(ctx: Context, info: RingInfo): Notification {
-        val ringPi = PendingIntent.getActivity(
-            ctx, 0,
-            Intent(ctx, RingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            mutable(),
-        )
+        val ringFlags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        val ringPi = PendingIntent.getActivity(ctx, 0, Intent(ctx, RingActivity::class.java).addFlags(ringFlags), mutable())
         fun svc(action: String, code: Int) = PendingIntent.getService(
             ctx, code, Intent(ctx, RingService::class.java).setAction(action), mutable(),
         )
         val journey = RingKind.isJourneyProblem(info.kind)
+        val fullScreen = ServiceLocator.settings.bool(K.FULLSCREEN_ALARM, true)
         val b = NotificationCompat.Builder(ctx, if (journey) CH_JOURNEY else CH_RING)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(info.title)
@@ -91,10 +116,18 @@ object Notifs {
             .setOngoing(true)
             .setAutoCancel(false)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setFullScreenIntent(ringPi, true)
             .setContentIntent(ringPi)
-        val dismissLabel = if (RingKind.endsTrip(info.kind)) "Stop tracking" else "Dismiss"
-        b.addAction(0, dismissLabel, svc(RingService.ACTION_DISMISS, 1))
+        // Setting "Open alarm full screen": when off, the alarm only shows as a banner you can tap.
+        if (fullScreen) b.setFullScreenIntent(ringPi, true)
+
+        if (info.kind == RingKind.TIME && info.challenge != Challenge.TAP) {
+            // The challenge must be finished on the ring screen, so this button opens it instead of dismissing.
+            val challengePi = PendingIntent.getActivity(ctx, 3, Intent(ctx, RingActivity::class.java).addFlags(ringFlags), mutable())
+            b.addAction(0, Challenge.actionLabel(info.challenge), challengePi)
+        } else {
+            val dismissLabel = if (RingKind.endsTrip(info.kind)) "Stop tracking" else "Dismiss"
+            b.addAction(0, dismissLabel, svc(RingService.ACTION_DISMISS, 1))
+        }
         if (info.kind == RingKind.TIME && info.snoozeCount < info.maxSnoozes) {
             b.addAction(0, "Snooze", svc(RingService.ACTION_SNOOZE, 2))
         }

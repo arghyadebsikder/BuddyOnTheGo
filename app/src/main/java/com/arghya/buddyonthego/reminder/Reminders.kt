@@ -23,24 +23,30 @@ import java.time.ZoneId
 
 /** HAB-5 and TSK-6: reminders go through AlarmManager into the Reminders channel. */
 object ReminderScheduler {
+    /** Start time of a habit. */
     const val ACTION_HABIT = "com.arghya.buddyonthego.REMIND_HABIT"
+    /** Finish time of a habit. */
+    const val ACTION_HABIT_END = "com.arghya.buddyonthego.HABIT_END"
     const val ACTION_TASK = "com.arghya.buddyonthego.REMIND_TASK"
     const val ACTION_HABIT_DONE = "com.arghya.buddyonthego.HABIT_DONE"
 
-    private fun habitPi(ctx: Context, id: Long) = Exact.broadcast(ctx, ReminderReceiver::class.java, ACTION_HABIT, "buddy://habit/$id")
+    fun startPi(ctx: Context, id: Long) = Exact.broadcast(ctx, ReminderReceiver::class.java, ACTION_HABIT, "buddy://habit/$id")
+
+    fun endPi(ctx: Context, id: Long) = Exact.broadcast(ctx, ReminderReceiver::class.java, ACTION_HABIT_END, "buddy://habitend/$id")
 
     private fun taskPi(ctx: Context, id: Long) = Exact.broadcast(ctx, ReminderReceiver::class.java, ACTION_TASK, "buddy://task/$id")
 
-    fun scheduleHabit(ctx: Context, h: Habit) {
-        cancelHabit(ctx, h.id)
-        if (h.reminderMinutes < 0 || h.archived) return
-        val mask = if (h.scheduleType == 1 && h.daysMask != 0) h.daysMask else 127
-        val t = NextTrigger.next(h.reminderMinutes / 60, h.reminderMinutes % 60, mask, System.currentTimeMillis(), ZoneId.systemDefault()) ?: return
-        Exact.set(ctx, t, habitPi(ctx, h.id))
-    }
+    /** Days a habit runs on. Bit 0 = Monday. Only "chosen days" habits use their own mask. */
+    fun maskOf(h: Habit): Int = if (h.scheduleType == 1 && h.daysMask != 0) h.daysMask else 127
 
+    /** Arms the start alarm (and the finish alarm while a timed habit is running). */
+    fun scheduleHabit(ctx: Context, h: Habit) = HabitRunner.sync(ctx, h)
+
+    /** Cancels only the pending alarms. Use HabitRunner.stop to also end a running session. */
     fun cancelHabit(ctx: Context, id: Long) {
-        ctx.getSystemService(AlarmManager::class.java).cancel(habitPi(ctx, id))
+        val am = ctx.getSystemService(AlarmManager::class.java)
+        am.cancel(startPi(ctx, id))
+        am.cancel(endPi(ctx, id))
     }
 
     fun scheduleTask(ctx: Context, t: Task) {
@@ -64,7 +70,7 @@ object Reschedule {
             if (s.modAlarm) AlarmScheduler.schedule(ctx, a) else AlarmScheduler.cancel(ctx, a.id)
         }
         for (h in db.habitDao().allHabits()) {
-            if (s.modHabit) ReminderScheduler.scheduleHabit(ctx, h) else ReminderScheduler.cancelHabit(ctx, h.id)
+            if (s.modHabit) ReminderScheduler.scheduleHabit(ctx, h) else HabitRunner.stop(ctx, h.id)
         }
         for (t in db.taskDao().getAll()) {
             if (s.modTodo) ReminderScheduler.scheduleTask(ctx, t) else ReminderScheduler.cancelTask(ctx, t.id)
@@ -85,22 +91,23 @@ class ReminderReceiver : BroadcastReceiver() {
                     ReminderScheduler.ACTION_HABIT -> {
                         val h = db.habitDao().habit(id)
                         if (h != null && ServiceLocator.settings.modHabit) {
-                            val done = Intent(ctx, ReminderReceiver::class.java)
-                                .setAction(ReminderScheduler.ACTION_HABIT_DONE)
-                                .setData(Uri.parse("buddy://habitdone/${h.id}"))
-                            val donePi = PendingIntent.getBroadcast(ctx, 0, done, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                            Notifs.post(
-                                ctx, Notifs.ID_REMIND_BASE + (h.id % 5000).toInt(),
-                                NotificationCompat.Builder(ctx, Notifs.CH_REMIND)
-                                    .setSmallIcon(R.drawable.ic_stat)
-                                    .setContentTitle("${h.icon} ${h.name}")
-                                    .setContentText("Time for your habit.")
-                                    .setAutoCancel(true)
-                                    .setContentIntent(Notifs.openApp(ctx))
-                                    .addAction(0, "Done", donePi)
-                                    .build(),
-                            )
+                            if (h.endMinutes < 0) {
+                                // Only a start time: a plain reminder.
+                                Notifs.post(ctx, Notifs.ID_REMIND_BASE + (h.id % 5000).toInt(), habitNotification(ctx, h, "Time to start: ${h.name}", "Tap Done when you have finished."))
+                            }
+                            // With a finish time, syncing starts the running session (notification, countdown, sound mode).
                             ReminderScheduler.scheduleHabit(ctx, h)
+                        }
+                    }
+                    ReminderScheduler.ACTION_HABIT_END -> {
+                        val h = db.habitDao().habit(id)
+                        if (h != null) {
+                            HabitRunner.finishWindow(ctx, h)
+                            val doneToday = db.habitDao().logFor(h.id, LocalDate.now().toString())?.status == 0
+                            if (!doneToday && ServiceLocator.settings.modHabit) {
+                                Notifs.post(ctx, Notifs.ID_REMIND_BASE + (h.id % 5000).toInt(), habitNotification(ctx, h, "Time is up: ${h.name}", "Did you finish? Tap Done to log it."))
+                            }
+                            if (ServiceLocator.settings.modHabit) ReminderScheduler.scheduleHabit(ctx, h)
                         }
                     }
                     ReminderScheduler.ACTION_HABIT_DONE -> {
@@ -108,6 +115,7 @@ class ReminderReceiver : BroadcastReceiver() {
                         db.habitDao().upsertLog(HabitLog(habitId = id, date = today, status = 0)
                             .let { l -> db.habitDao().logFor(id, today)?.let { old -> l.copy(id = old.id) } ?: l })
                         Notifs.cancel(ctx, Notifs.ID_REMIND_BASE + (id % 5000).toInt())
+                        db.habitDao().habit(id)?.let { HabitRunner.finishEarly(ctx, it) }
                     }
                     ReminderScheduler.ACTION_TASK -> {
                         val t = db.taskDao().get(id)
@@ -130,4 +138,19 @@ class ReminderReceiver : BroadcastReceiver() {
             }
         }
     }
+}
+
+private fun habitNotification(ctx: Context, h: Habit, title: String, text: String): android.app.Notification {
+    val done = Intent(ctx, ReminderReceiver::class.java)
+        .setAction(ReminderScheduler.ACTION_HABIT_DONE)
+        .setData(Uri.parse("buddy://habitdone/${h.id}"))
+    val donePi = PendingIntent.getBroadcast(ctx, 0, done, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    return NotificationCompat.Builder(ctx, Notifs.CH_REMIND)
+        .setSmallIcon(R.drawable.ic_stat)
+        .setContentTitle(title)
+        .setContentText(text)
+        .setAutoCancel(true)
+        .setContentIntent(Notifs.openApp(ctx))
+        .addAction(0, "Done", donePi)
+        .build()
 }

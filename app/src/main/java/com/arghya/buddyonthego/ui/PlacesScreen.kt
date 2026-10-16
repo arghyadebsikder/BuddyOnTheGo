@@ -115,13 +115,29 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
         }
     }
 
-    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        scope.launch {
+            if (granted) snackbar.showSnackbar("Notifications allowed. Trip alerts will show.")
+            else {
+                val r = snackbar.showSnackbar("Notifications are off, so trip alerts may not show.", actionLabel = "Settings", duration = SnackbarDuration.Long)
+                if (r == SnackbarResult.ActionPerformed) Perms.openNotificationSettings(ctx)
+            }
+        }
+    }
 
     fun doStart(t: Triple<Int, Long, String>) {
         TripController.start(ctx, t.first, t.second, t.third)
+        if (Perms.locationServicesOn(ctx)) scope.launch { snackbar.showSnackbar("Trip started. Buddy is watching your location.") }
+        else scope.launch {
+            val r = snackbar.showSnackbar("Location is switched off on this phone. Turn it on so Buddy can see your trip.", actionLabel = "Turn on", duration = SnackbarDuration.Long)
+            if (r == SnackbarResult.ActionPerformed) Perms.openLocationSettings(ctx)
+        }
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        ) {
+            Perms.markAskedNotifications()
+            notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         val pm = ctx.getSystemService(PowerManager::class.java)
         if (!pm.isIgnoringBatteryOptimizations(ctx.packageName) && !ServiceLocator.settings.bool(K.ASKED_BATTERY, false)) {
             ServiceLocator.settings.put(K.ASKED_BATTERY, true)
@@ -133,7 +149,10 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
         val p = pendingStart
         pendingStart = null
         if (p != null && res[Manifest.permission.ACCESS_FINE_LOCATION] == true) doStart(p)
-        else scope.launch { snackbar.showSnackbar("Location permission is needed to watch a trip.") }
+        else scope.launch {
+            val r = snackbar.showSnackbar("Location is needed to watch a trip. It is only used while a trip runs.", actionLabel = "Settings", duration = SnackbarDuration.Long)
+            if (r == SnackbarResult.ActionPerformed) Perms.openAppSettings(ctx)
+        }
     }
 
     fun requestStart(type: Int, id: Long, name: String) {
@@ -144,6 +163,7 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
         val t = Triple(type, id, name)
         if (hasLocationPermission(ctx)) doStart(t) else {
             pendingStart = t
+            Perms.markAskedLocation()
             permLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }
     }
@@ -171,13 +191,13 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
                     if (!s.distance.isNaN()) Text("${Fmt.dist(s.distance, km)} left")
                     Spacer(Modifier.height(8.dp))
                     var confirm by remember { mutableStateOf(false) }
-                    OutlinedButton(onClick = { confirm = true }) { Text("Stop tracking") }
+                    BigButton("Stop tracking", { confirm = true }, style = BtnStyle.Outline)
                     if (confirm) AlertDialog(
                         onDismissRequest = { confirm = false },
                         title = { Text("Stop tracking?") },
                         text = { Text("Buddy will stop watching this trip.") },
-                        confirmButton = { TextButton(onClick = { confirm = false; TripController.stop(ctx) }) { Text("Stop") } },
-                        dismissButton = { TextButton(onClick = { confirm = false }) { Text("Keep going") } },
+                        confirmButton = { BigButton("Stop", { confirm = false; TripController.stop(ctx) }, style = BtnStyle.Text, height = 48.dp) },
+                        dismissButton = { BigButton("Keep going", { confirm = false }, style = BtnStyle.Text, height = 48.dp) },
                     )
                 }
             }
@@ -185,7 +205,7 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
 
         item { SectionTitle("GPS alarms") }
         item {
-            Button(onClick = { initialShared = null; editingGps = GpsAlarm() }, modifier = Modifier.fillMaxWidth()) { Text("New GPS alarm") }
+            BigButton("New GPS alarm", { initialShared = null; editingGps = GpsAlarm() }, modifier = Modifier.fillMaxWidth())
         }
         if (gpsAlarms.isEmpty()) item { DisabledNote("Wake me when I arrive somewhere. Add a destination and tap Start while the app is open.") }
         items(gpsAlarms, key = { "g${it.id}" }) { a ->
@@ -198,8 +218,8 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
                 )
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { requestStart(TripController.TYPE_GPS, a.id, a.name.ifBlank { "Destination" }) }) { Text("Start") }
-                    OutlinedButton(onClick = { initialShared = null; editingGps = a }) { Text("Edit") }
+                    BigButton("Start", { requestStart(TripController.TYPE_GPS, a.id, a.name.ifBlank { "Destination" }) })
+                    BigButton("Edit", { initialShared = null; editingGps = a }, style = BtnStyle.Outline)
                 }
             }
         }
@@ -207,8 +227,8 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
         item { SectionTitle("Routes (route guard)") }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = { recordDialog = true }, modifier = Modifier.weight(1f)) { Text("Record") }
-                OutlinedButton(onClick = { importLauncher.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1f)) { Text("Import GPX/KML") }
+                BigButton("Record", { recordDialog = true }, modifier = Modifier.weight(1f))
+                BigButton("Import GPX/KML", { importLauncher.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1f), style = BtnStyle.Outline)
             }
         }
         if (routes.isEmpty()) item { DisabledNote("Record a trip once, then Buddy watches it for off-route, wrong direction and arrival.") }
@@ -219,8 +239,8 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
                 Text("${Fmt.dist(len, km)}, corridor ${r.corridorMeters} m, from ${r.createdFrom}", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { requestStart(TripController.TYPE_ROUTE, r.id, r.name.ifBlank { "Route" }) }) { Text("Start") }
-                    OutlinedButton(onClick = { editingRoute = r }) { Text("Edit") }
+                    BigButton("Start", { requestStart(TripController.TYPE_ROUTE, r.id, r.name.ifBlank { "Route" }) })
+                    BigButton("Edit", { editingRoute = r }, style = BtnStyle.Outline)
                 }
             }
         }
@@ -234,8 +254,8 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
                         Text(p.name, style = MaterialTheme.typography.titleMedium)
                         Text(String.format(Locale.US, "%.5f, %.5f", p.lat, p.lng), style = MaterialTheme.typography.bodySmall)
                     }
-                    TextButton(onClick = { scope.launch { db.gpsAlarmDao().upsert(GpsAlarm(name = p.name, destLat = p.lat, destLng = p.lng, radiusMeters = p.radiusMeters)) } }) { Text("Make alarm") }
-                    TextButton(onClick = { scope.launch { db.savedPlaceDao().delete(p.id) } }) { Text("Delete") }
+                    BigButton("Make alarm", { scope.launch { db.gpsAlarmDao().upsert(GpsAlarm(name = p.name, destLat = p.lat, destLng = p.lng, radiusMeters = p.radiusMeters)) } }, style = BtnStyle.Text, height = 48.dp)
+                    BigButton("Delete", { scope.launch { db.savedPlaceDao().delete(p.id) } }, style = BtnStyle.Text, height = 48.dp)
                 }
             }
         }
@@ -265,22 +285,22 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
             title = { Text("Edit route") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
+                    BuddyTextField(name, { name = it }, "Name")
                     Stepper("Corridor width", corridor, 100, 1000, 50, " m") { corridor = it }
                     Stepper("Destination radius", radius, 100, 2000, 50, " m") { radius = it }
                     SwitchRow("Wrong-direction alarm", checked = wrong) { wrong = it }
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                BigButton("Save", {
                     editingRoute = null
                     scope.launch { db.routeDao().upsert(r.copy(name = name.trim(), corridorMeters = corridor, destRadiusMeters = radius, wrongDirectionAlarm = wrong)) }
-                }) { Text("Save") }
+                }, style = BtnStyle.Text, height = 48.dp)
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = { editingRoute = null; scope.launch { db.routeDao().delete(r.id) } }) { Text("Delete") }
-                    TextButton(onClick = { editingRoute = null }) { Text("Cancel") }
+                    BigButton("Delete", { editingRoute = null; scope.launch { db.routeDao().delete(r.id) } }, style = BtnStyle.Text, height = 48.dp)
+                    BigButton("Cancel", { editingRoute = null }, style = BtnStyle.Text, height = 48.dp)
                 }
             },
         )
@@ -294,13 +314,13 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Ride or walk the route once with this app open, then tap Stop tracking.")
-                    OutlinedTextField(name, { name = it }, label = { Text("Route name") }, singleLine = true)
+                    BuddyTextField(name, { name = it }, "Route name")
                 }
             },
             confirmButton = {
-                TextButton(onClick = { recordDialog = false; requestStart(TripController.TYPE_RECORD, 0, name.ifBlank { "Recorded route" }) }) { Text("Start recording") }
+                BigButton("Start recording", { recordDialog = false; requestStart(TripController.TYPE_RECORD, 0, name.ifBlank { "Recorded route" }) }, style = BtnStyle.Text, height = 48.dp)
             },
-            dismissButton = { TextButton(onClick = { recordDialog = false }) { Text("Cancel") } },
+            dismissButton = { BigButton("Cancel", { recordDialog = false }, style = BtnStyle.Text, height = 48.dp) },
         )
     }
 
@@ -309,15 +329,15 @@ fun PlacesScreen(snackbar: SnackbarHostState, sharedText: String?, onSharedConsu
         title = { Text("Keep Buddy awake") },
         text = { Text("So Android does not stop Buddy while you sleep, allow it to ignore battery optimization.") },
         confirmButton = {
-            TextButton(onClick = {
+            BigButton("Allow", {
                 batteryDialog = false
                 val direct = Intent(AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}"))
                 try { ctx.startActivity(direct) } catch (_: Exception) {
                     ctx.startActivity(Intent(AndroidSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                 }
-            }) { Text("Allow") }
+            }, style = BtnStyle.Text, height = 48.dp)
         },
-        dismissButton = { TextButton(onClick = { batteryDialog = false }) { Text("Not now") } },
+        dismissButton = { BigButton("Not now", { batteryDialog = false }, style = BtnStyle.Text, height = 48.dp) },
     )
 }
 
@@ -362,48 +382,47 @@ private fun GpsAlarmEditor(
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
-            Column(Modifier.systemBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.systemBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(if (initial.id == 0L) "New GPS alarm" else "Edit GPS alarm", style = MaterialTheme.typography.headlineSmall)
-                OutlinedTextField(name, { name = it }, label = { Text("Name (for example Central Station)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                BuddyTextField(name, { name = it }, "Name (for example Central Station)")
 
                 Text("Destination", style = MaterialTheme.typography.titleSmall)
-                OutlinedTextField(
-                    destText, { applyText(it) }, label = { Text("Coordinates or map link") },
-                    supportingText = { Text(dest?.let { String.format(Locale.US, "Using %.5f, %.5f", it.lat, it.lng) } ?: "Paste 23.8103, 90.4125 or a full Google Maps / OpenStreetMap link") },
-                    modifier = Modifier.fillMaxWidth(),
+                BuddyTextField(
+                    destText, { applyText(it) }, "Coordinates or map link", singleLine = false,
+                    supportingText = dest?.let { String.format(Locale.US, "Using %.5f, %.5f", it.lat, it.lng) } ?: "Paste 23.8103, 90.4125 or a full Google Maps / OpenStreetMap link",
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { clipboard.getText()?.text?.let { applyText(it) } }) { Text("Paste") }
-                    OutlinedButton(onClick = {
+                    BigButton("Paste", { clipboard.getText()?.text?.let { applyText(it) } }, style = BtnStyle.Outline)
+                    BigButton("Use my location", {
                         val l = lastKnownLocation(ctx)
                         if (l == null) scope.launch { snackbar.showSnackbar("No location yet. Allow location and try again outdoors.") }
                         else { dest = LatLng(l.latitude, l.longitude); destText = String.format(Locale.US, "%.6f, %.6f", l.latitude, l.longitude) }
-                    }) { Text("Use my location") }
+                    }, style = BtnStyle.Outline)
                 }
                 if (places.isNotEmpty()) {
                     Text("Saved places", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ChipFlow {
                         places.forEach { p ->
-                            AssistChip(onClick = {
+                            BuddyChip(false, p.name, {
                                 dest = LatLng(p.lat, p.lng); destText = String.format(Locale.US, "%.6f, %.6f", p.lat, p.lng)
                                 if (name.isBlank()) name = p.name
                                 radius = p.radiusMeters
-                            }, label = { Text(p.name) })
+                            })
                         }
                     }
                 }
 
                 if (online) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(query, { query = it }, label = { Text("Search a place (online)") }, singleLine = true, modifier = Modifier.weight(1f))
-                        Button(onClick = {
+                        BuddyTextField(query, { query = it }, "Search a place (online)", Modifier.weight(1f))
+                        BigButton("Search", {
                             scope.launch {
                                 val near = lastKnownLocation(ctx)
                                 val out = PlaceSearch(ServiceLocator.gate).search(query, near?.latitude, near?.longitude)
                                 hits = out.hits
                                 searchMsg = out.error ?: if (out.hits.isEmpty()) "No results." else null
                             }
-                        }) { Text("Search") }
+                        })
                     }
                     hits.forEach { h ->
                         TextButton(onClick = {
@@ -424,30 +443,31 @@ private fun GpsAlarmEditor(
 
                 Stepper("Radius", radius, 50, 5000, 50, " m") { radius = it }
                 Text("Trigger", style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Arrive", "Leave", "Pass").forEachIndexed { i, n -> FilterChip(selected = trigger == i, onClick = { trigger = i }, label = { Text(n) }) }
+                ChipFlow {
+                    listOf("Arrive", "Leave", "Pass").forEachIndexed { i, n -> BuddyChip(trigger == i, n, { trigger = i }) }
                 }
                 if (trigger == 0) {
                     Text("Ring early by", style = MaterialTheme.typography.titleSmall)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(selected = leadMode == 0, onClick = { leadMode = 0 }, label = { Text("Distance") })
-                        FilterChip(selected = leadMode == 1, onClick = { leadMode = 1 }, label = { Text("Minutes before arrival") })
+                    ChipFlow {
+                        BuddyChip(leadMode == 0, "Distance", { leadMode = 0 })
+                        BuddyChip(leadMode == 1, "Minutes before arrival", { leadMode = 1 })
                     }
                     if (leadMode == 0) Stepper("Lead distance", leadValue, 0, 5000, 100, " m") { leadValue = it }
                     else Stepper("Minutes before", leadValue, 0, 60, 1, " min") { leadValue = it }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                    Button(enabled = dest != null, onClick = {
-                        val d = dest ?: return@Button
-                        onSave(initial.copy(name = name.trim(), destLat = d.lat, destLng = d.lng, radiusMeters = radius, triggerType = trigger, leadMode = leadMode, leadValue = leadValue))
-                    }, modifier = Modifier.weight(1f)) { Text("Save") }
+                    BigButton("Cancel", onDismiss, modifier = Modifier.weight(1f), style = BtnStyle.Outline)
+                    BigButton("Save", {
+                        dest?.let { d ->
+                            onSave(initial.copy(name = name.trim(), destLat = d.lat, destLng = d.lng, radiusMeters = radius, triggerType = trigger, leadMode = leadMode, leadValue = leadValue))
+                        }
+                    }, modifier = Modifier.weight(1f), enabled = dest != null)
                 }
                 if (dest != null && name.isNotBlank()) {
-                    TextButton(onClick = { onSavePlace(name.trim(), dest!!.lat, dest!!.lng, radius); scope.launch { snackbar.showSnackbar("Saved to places.") } }, modifier = Modifier.fillMaxWidth()) { Text("Also save as a place") }
+                    BigButton("Also save as a place", { onSavePlace(name.trim(), dest!!.lat, dest!!.lng, radius); scope.launch { snackbar.showSnackbar("Saved to places.") } }, modifier = Modifier.fillMaxWidth(), style = BtnStyle.Text, height = 48.dp)
                 }
-                if (onDelete != null) TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) { Text("Delete alarm") }
+                if (onDelete != null) BigButton("Delete alarm", onDelete, modifier = Modifier.fillMaxWidth(), style = BtnStyle.Text, height = 48.dp)
             }
         }
     }

@@ -1,12 +1,8 @@
 package com.arghya.buddyonthego.ui
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
@@ -17,18 +13,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.arghya.buddyonthego.ServiceLocator
 import com.arghya.buddyonthego.alarm.AlarmScheduler
+import com.arghya.buddyonthego.alarm.Challenge
 import com.arghya.buddyonthego.data.Alarm
 import com.arghya.buddyonthego.data.K
+import com.arghya.buddyonthego.domain.MathChallenge
 import com.arghya.buddyonthego.domain.NextTrigger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AlarmsScreen(snackbar: SnackbarHostState) {
     val ctx = LocalContext.current
@@ -43,33 +38,29 @@ fun AlarmsScreen(snackbar: SnackbarHostState) {
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             item(key = "hero") {
-                ScreenHeader("Alarms", "Wake on time")
+                ScreenHeader("Alarms", Fmt.greeting())
                 Spacer(Modifier.height(10.dp))
                 NextAlarmHero(alarms)
             }
             if (alarms.isEmpty()) item(key = "empty") {
-                CardBox { Text("Tap + to add your first alarm. A common alarm takes 3 taps.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                CardBox { Text("Tap the + button to add your first alarm. It takes 3 taps.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             items(alarms, key = { it.id }) { a ->
-                val (main, ampm) = Fmt.parts(a.hour, a.minute, h12)
-                CardBox(Modifier.combinedClickable(onClick = { editing = a }, onLongClick = { menuFor = a.id })) {
+                CardBox(onClick = { editing = a }, onLongClick = { menuFor = a.id }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.Bottom) {
-                                Text(main, style = ClockStyle, color = if (a.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                                if (ampm.isNotEmpty()) {
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(ampm, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 10.dp))
-                                }
-                            }
-                            if (a.label.isNotBlank()) Text(a.label, style = MaterialTheme.typography.bodyMedium)
+                            ClockText(
+                                a.hour, a.minute, h12, 48.sp,
+                                color = if (a.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (a.label.isNotBlank()) Text(a.label, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                             Spacer(Modifier.height(6.dp))
-                            if (a.daysMask == 0) Text("Once", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (a.daysMask == 0) Text("Once", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Fmt.dayLetters.forEachIndexed { i, d ->
                                     val on = a.daysMask and (1 shl i) != 0
                                     Text(
-                                        d, style = MaterialTheme.typography.labelLarge,
+                                        d, style = MaterialTheme.typography.bodyLarge,
                                         color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
                                         fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
                                     )
@@ -83,23 +74,24 @@ fun AlarmsScreen(snackbar: SnackbarHostState) {
                                 dao.upsert(updated)
                                 AlarmScheduler.schedule(ctx, updated)
                             }
-                        })
+                        }, modifier = Modifier.padding(start = 8.dp))
                     }
                     if (menuFor == a.id) DropdownMenu(expanded = true, onDismissRequest = { menuFor = null }) {
-                        DropdownMenuItem(text = { Text("Duplicate") }, onClick = {
+                        DropdownMenuItem(text = { Text("Duplicate", style = MaterialTheme.typography.bodyLarge) }, onClick = {
                             menuFor = null
                             scope.launch {
                                 val id = dao.upsert(a.copy(id = 0))
                                 AlarmScheduler.schedule(ctx, a.copy(id = id))
                             }
                         })
-                        DropdownMenuItem(text = { Text("Delete") }, onClick = {
+                        DropdownMenuItem(text = { Text("Delete", style = MaterialTheme.typography.bodyLarge) }, onClick = {
                             menuFor = null
                             scope.launch { deleteWithUndo(ctx, a, snackbar) }
                         })
                     }
                 }
             }
+            if (alarms.isNotEmpty()) item(key = "hint") { DisabledNote("Tap an alarm to change it. Press and hold for more.") }
         }
         GlowFab(
             Icons.Default.Add, "Add alarm",
@@ -114,7 +106,11 @@ fun AlarmsScreen(snackbar: SnackbarHostState) {
                 editing = null
                 scope.launch {
                     val id = dao.upsert(saved)
-                    AlarmScheduler.schedule(ctx, saved.copy(id = if (saved.id == 0L) id else saved.id))
+                    val full = saved.copy(id = if (saved.id == 0L) id else saved.id)
+                    AlarmScheduler.schedule(ctx, full)
+                    AlarmScheduler.nextTriggerFor(full)?.let {
+                        snackbar.showSnackbar("Alarm set. Rings in ${Fmt.duration(it - System.currentTimeMillis())}.")
+                    }
                 }
             },
             onDelete = if (a.id != 0L) ({ editing = null; scope.launch { deleteWithUndo(ctx, a, snackbar) } }) else null,
@@ -133,81 +129,109 @@ private suspend fun deleteWithUndo(ctx: android.content.Context, a: Alarm, snack
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun AlarmEditor(initial: Alarm, h12: Boolean, onDismiss: () -> Unit, onSave: (Alarm) -> Unit, onDelete: (() -> Unit)?) {
-    val timeState = rememberTimePickerState(initial.hour, initial.minute, is24Hour = !h12)
+    var hour by remember { mutableIntStateOf(initial.hour) }
+    var minute by remember { mutableIntStateOf(initial.minute) }
     var mask by remember { mutableIntStateOf(initial.daysMask) }
     var label by remember { mutableStateOf(initial.label) }
     var snooze by remember { mutableIntStateOf(initial.snoozeMinutes) }
     var maxSnooze by remember { mutableIntStateOf(initial.maxSnoozes) }
     var ramp by remember { mutableIntStateOf(initial.volumeRampSeconds) }
     var challenge by remember { mutableIntStateOf(initial.challengeType) }
+    var mathLevel by remember { mutableIntStateOf(initial.mathDifficulty) }
     var vibe by remember { mutableIntStateOf(initial.vibrationPattern) }
     var skip by remember { mutableStateOf(initial.skipNextDate) }
+    val example = remember(mathLevel) { MathChallenge.generate(mathLevel) }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) {
-            Column(Modifier.systemBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if (initial.id == 0L) "New alarm" else "Edit alarm", style = MaterialTheme.typography.headlineSmall)
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { TimePicker(state = timeState) }
+    // Live "rings in ..." so the person can see what the alarm will do before saving.
+    val preview = remember(hour, minute, mask) {
+        AlarmScheduler.nextTriggerFor(Alarm(hour = hour, minute = minute, daysMask = mask), ignoreSkip = true)
+    }
 
-                Text("Repeat", style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Fmt.dayLetters.forEachIndexed { i, d ->
-                        FilterChip(
-                            selected = mask and (1 shl i) != 0,
-                            onClick = { mask = mask xor (1 shl i) },
-                            label = { Text(d) },
-                        )
-                    }
-                }
-                Text(if (mask == 0) "Rings once" else "Repeats on the days above", style = MaterialTheme.typography.bodySmall)
-
-                OutlinedTextField(label, { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Stepper("Snooze length", snooze, 1, 30, 1, " min") { snooze = it }
-                Stepper("Maximum snoozes", maxSnooze, 0, 10) { maxSnooze = it }
-                Stepper("Gradual volume", ramp, 0, 120, 5, " s") { ramp = it }
-
-                Text("Dismiss challenge", style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Hold", "Math", "Shake").forEachIndexed { i, n ->
-                        FilterChip(selected = challenge == i, onClick = { challenge = i }, label = { Text(n) })
-                    }
-                }
-                Text("Vibration", style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Standard", "Strong").forEachIndexed { i, n ->
-                        FilterChip(selected = vibe == i, onClick = { vibe = i }, label = { Text(n) })
-                    }
-                }
-
-                if (mask != 0) {
-                    SwitchRow(
-                        "Skip next ring", skip?.let { "Skipping $it" } ?: "Skip one date, for example a holiday",
-                        checked = skip != null,
-                    ) { on ->
-                        skip = if (on) {
-                            AlarmScheduler.nextTriggerFor(
-                                Alarm(hour = timeState.hour, minute = timeState.minute, daysMask = mask), ignoreSkip = true,
-                            )?.let { NextTrigger.dateOf(it, ZoneId.systemDefault()).toString() }
-                        } else null
-                    }
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                    Button(onClick = {
-                        onSave(initial.copy(
-                            hour = timeState.hour, minute = timeState.minute, daysMask = mask, label = label.trim(),
-                            enabled = true, snoozeMinutes = snooze, maxSnoozes = maxSnooze, volumeRampSeconds = ramp,
-                            challengeType = challenge, vibrationPattern = vibe, skipNextDate = if (mask == 0) null else skip,
-                        ))
-                    }, modifier = Modifier.weight(1f)) { Text("Save") }
-                }
-                if (onDelete != null) TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) { Text("Delete alarm") }
+    EditorDialog(
+        title = if (initial.id == 0L) "New alarm" else "Edit alarm",
+        onDismiss = onDismiss,
+        footer = {
+            BigButton("Cancel", onDismiss, Modifier.weight(1f), BtnStyle.Outline, height = 60.dp)
+            BigButton("Save", {
+                onSave(initial.copy(
+                    hour = hour, minute = minute, daysMask = mask, label = label.trim(),
+                    enabled = true, snoozeMinutes = snooze, maxSnoozes = maxSnooze, volumeRampSeconds = ramp,
+                    challengeType = challenge, mathDifficulty = mathLevel, vibrationPattern = vibe,
+                    skipNextDate = if (mask == 0) null else skip,
+                ))
+            }, Modifier.weight(1f), height = 60.dp)
+        },
+    ) {
+        CardBox(accent = true) {
+            Text("Swipe up or down to set the time", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.CenterHorizontally))
+            Spacer(Modifier.height(6.dp))
+            TimeWheel(initial.hour, initial.minute, is24 = !h12, onChange = { h, m -> hour = h; minute = m })
+            if (preview != null) {
+                Text(
+                    "Rings in ${Fmt.duration(preview - System.currentTimeMillis())}",
+                    style = MaterialTheme.typography.titleSmall.copy(fontSize = 16.sp), color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 6.dp),
+                )
             }
         }
+
+        Text("Repeat", style = MaterialTheme.typography.titleSmall)
+        ChipFlow {
+            BuddyChip(mask == 0, "Once", { mask = 0 })
+            BuddyChip(mask == 127, "Every day", { mask = 127 })
+            BuddyChip(mask == 31, "Weekdays", { mask = 31 })
+            BuddyChip(mask == 96, "Weekend", { mask = 96 })
+        }
+        DayPicker(mask) { mask = it }
+        Text(if (mask == 0) "Rings once, then turns itself off." else "Repeats on the highlighted days.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        BuddyTextField(label, { label = it }, "Label (optional)")
+
+        CardBox {
+            Stepper("Snooze length", snooze, 1, 30, 1, " min") { snooze = it }
+            Stepper("Maximum snoozes", maxSnooze, 0, 10) { maxSnooze = it }
+            Stepper("Gradual volume", ramp, 0, 120, 5, " s") { ramp = it }
+        }
+
+        Text("To switch it off, I will", style = MaterialTheme.typography.titleSmall)
+        ChipFlow {
+            Challenge.names.forEachIndexed { i, n -> BuddyChip(challenge == i, n, { challenge = i }) }
+        }
+        Text(Challenge.hints[challenge.coerceIn(0, Challenge.hints.lastIndex)], style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (challenge == Challenge.MATH) {
+            Text("Math difficulty", style = MaterialTheme.typography.titleSmall)
+            ChipFlow {
+                MathChallenge.levelNames.forEachIndexed { i, n -> BuddyChip(mathLevel == i, n, { mathLevel = i }) }
+            }
+            Text(
+                "${MathChallenge.levelHints[mathLevel.coerceIn(0, 2)]}. Example: ${example.text} = ?",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Text("Vibration", style = MaterialTheme.typography.titleSmall)
+        ChipFlow {
+            listOf("Standard", "Strong").forEachIndexed { i, n -> BuddyChip(vibe == i, n, { vibe = i }) }
+        }
+
+        if (mask != 0) {
+            CardBox {
+                SwitchRow(
+                    "Skip next ring", skip?.let { "Skipping $it" } ?: "Skip one date, for example a holiday",
+                    checked = skip != null,
+                ) { on ->
+                    skip = if (on) {
+                        AlarmScheduler.nextTriggerFor(
+                            Alarm(hour = hour, minute = minute, daysMask = mask), ignoreSkip = true,
+                        )?.let { NextTrigger.dateOf(it, ZoneId.systemDefault()).toString() }
+                    } else null
+                }
+            }
+        }
+        if (onDelete != null) BigButton("Delete alarm", onDelete, Modifier.fillMaxWidth(), BtnStyle.Danger)
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -222,9 +246,9 @@ private fun NextAlarmHero(alarms: List<Alarm>) {
     CardBox(accent = next != null) {
         Text("NEXT ALARM", style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (next != null) {
-            GradientText("in " + Fmt.duration(next.second - now), 40)
+            GradientText("in " + Fmt.duration(next.second - now), 44)
             val (m, ap) = Fmt.parts(next.first.hour, next.first.minute, h12)
-            Text("Rings at $m $ap".trim() + if (next.first.label.isNotBlank()) "  -  ${next.first.label}" else "", style = MaterialTheme.typography.bodyMedium)
+            Text("Rings at $m $ap".trim() + if (next.first.label.isNotBlank()) "  -  ${next.first.label}" else "", style = MaterialTheme.typography.bodyLarge)
         } else {
             Text("No alarm is set", style = MaterialTheme.typography.headlineSmall)
         }

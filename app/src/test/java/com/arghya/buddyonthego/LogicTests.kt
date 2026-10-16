@@ -91,6 +91,57 @@ class LogicTests {
         assertTrue(events.contains(RouteEvent.WRONG_DIRECTION))
     }
 
+    // ---- v0.0.3 ----
+
+    @Test fun habitWindowActiveInsideAndNotOutside() {
+        val utc = ZoneId.of("UTC")
+        fun at(h: Int, m: Int) = ZonedDateTime.of(2026, 10, 12, h, m, 0, 0, utc).toInstant().toEpochMilli() // Monday
+        // 09:00 to 09:30
+        assertNull(HabitWindow.activeAt(540, 570, 127, at(8, 59), utc))
+        val w = HabitWindow.activeAt(540, 570, 127, at(9, 10), utc)!!
+        assertEquals(at(9, 0), w.startMs)
+        assertEquals(at(9, 30), w.endMs)
+        assertEquals(1f / 3f, w.progress(at(9, 10)), 0.01f)
+        assertNull(HabitWindow.activeAt(540, 570, 127, at(9, 30), utc))
+    }
+
+    @Test fun habitWindowCrossesMidnight() {
+        val utc = ZoneId.of("UTC")
+        // 23:00 to 01:00, running on Monday only (bit 0)
+        val mondayNight = ZonedDateTime.of(2026, 10, 12, 23, 30, 0, 0, utc).toInstant().toEpochMilli()
+        val tuesdayEarly = ZonedDateTime.of(2026, 10, 13, 0, 30, 0, 0, utc).toInstant().toEpochMilli()
+        val tuesdayNight = ZonedDateTime.of(2026, 10, 13, 23, 30, 0, 0, utc).toInstant().toEpochMilli()
+        assertNotNull(HabitWindow.activeAt(23 * 60, 60, 1, mondayNight, utc))
+        assertNotNull(HabitWindow.activeAt(23 * 60, 60, 1, tuesdayEarly, utc))
+        assertNull(HabitWindow.activeAt(23 * 60, 60, 1, tuesdayNight, utc))
+        assertEquals(120, HabitWindow.lengthMinutes(23 * 60, 60))
+    }
+
+    @Test fun mathAnswersAreCorrectAndInRange() {
+        val rnd = kotlin.random.Random(42)
+        for (level in 0..2) repeat(200) {
+            val p = MathChallenge.generate(level, rnd)
+            assertTrue(p.answer >= 0)
+            val parts = p.text.split(" ")
+            val a = parts[0].toInt()
+            val b = parts[2].toInt()
+            val expected = when (parts[1]) {
+                "+" -> if (parts.size == 3) a + b else 0
+                "-" -> a - b
+                else -> a * b + parts[4].toInt()
+            }
+            if (parts[1] != "+") assertEquals(expected, p.answer) else assertEquals(a + b, p.answer)
+        }
+    }
+
+    @Test fun autoThemeSwitchesAtTheChosenTimes() {
+        assertFalse(ThemeSchedule.isDark(12 * 60, 390, 1110))
+        assertTrue(ThemeSchedule.isDark(23 * 60, 390, 1110))
+        assertTrue(ThemeSchedule.isDark(5 * 60, 390, 1110))
+        assertFalse(ThemeSchedule.isDark(390, 390, 1110))
+        assertTrue(ThemeSchedule.isDark(1110, 390, 1110))
+    }
+
     /** NET-2 / NET-10: HTTP classes only inside the net package; tracking never touches NetworkGate. */
     @Test fun networkIsolation() {
         val root = File("src/main/java")

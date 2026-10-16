@@ -38,6 +38,7 @@ data class RingInfo(
     val rampSec: Int = 20,
     val vibe: Int = 0,
     val challenge: Int = 0,
+    val mathLevel: Int = 1,
     val startedAt: Long = System.currentTimeMillis(),
 )
 
@@ -99,7 +100,14 @@ class RingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ServiceLocator.init(this)
         when (intent?.action) {
-            ACTION_DISMISS -> { finish(ownerCleanup = true); return START_NOT_STICKY }
+            ACTION_DISMISS -> {
+                // A time alarm with a challenge can only be dismissed from the ring screen, after the challenge is done.
+                val i = info
+                val locked = i != null && i.kind == RingKind.TIME && i.challenge != Challenge.TAP &&
+                    !intent.getBooleanExtra(EXTRA_VERIFIED, false)
+                if (!locked) finish(ownerCleanup = true)
+                return START_NOT_STICKY
+            }
             ACTION_SNOOZE -> { snooze(); return START_NOT_STICKY }
             ACTION_DISMISS_KIND -> {
                 if (info?.kind == intent.getIntExtra("kind", -1)) finish(ownerCleanup = false)
@@ -119,6 +127,7 @@ class RingService : Service() {
             rampSec = intent.getIntExtra("rampSec", 20),
             vibe = intent.getIntExtra("vibe", 0),
             challenge = intent.getIntExtra("challenge", 0),
+            mathLevel = intent.getIntExtra("mathLevel", 1),
         )
         info = new
         finished = false
@@ -249,23 +258,25 @@ class RingService : Service() {
         const val ACTION_DISMISS = "com.arghya.buddyonthego.RING_DISMISS"
         const val ACTION_SNOOZE = "com.arghya.buddyonthego.RING_SNOOZE"
         const val ACTION_DISMISS_KIND = "com.arghya.buddyonthego.RING_DISMISS_KIND"
+        const val EXTRA_VERIFIED = "challenge_done"
 
         fun start(
             ctx: Context, kind: Int, title: String, body: String,
             ownerId: Long = 0, snoozeCount: Int = 0, maxSnoozes: Int = 0, snoozeMinutes: Int = 9,
-            rampSec: Int = 20, vibe: Int = 0, challenge: Int = 0,
+            rampSec: Int = 20, vibe: Int = 0, challenge: Int = 0, mathLevel: Int = 1,
         ) {
             val i = Intent(ctx, RingService::class.java)
                 .putExtra("kind", kind).putExtra("title", title).putExtra("body", body)
                 .putExtra("ownerId", ownerId).putExtra("snoozeCount", snoozeCount)
                 .putExtra("maxSnoozes", maxSnoozes).putExtra("snoozeMinutes", snoozeMinutes)
-                .putExtra("rampSec", rampSec).putExtra("vibe", vibe).putExtra("challenge", challenge)
+                .putExtra("rampSec", rampSec).putExtra("vibe", vibe).putExtra("challenge", challenge).putExtra("mathLevel", mathLevel)
             ContextCompat.startForegroundService(ctx, i)
         }
 
-        fun send(ctx: Context, action: String, kind: Int = -1) {
+        /** [verified] = the person finished the dismiss challenge on the ring screen. */
+        fun send(ctx: Context, action: String, kind: Int = -1, verified: Boolean = false) {
             try {
-                ctx.startService(Intent(ctx, RingService::class.java).setAction(action).putExtra("kind", kind))
+                ctx.startService(Intent(ctx, RingService::class.java).setAction(action).putExtra("kind", kind).putExtra(EXTRA_VERIFIED, verified))
             } catch (_: Exception) { }
         }
     }

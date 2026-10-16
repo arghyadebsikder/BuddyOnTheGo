@@ -11,7 +11,6 @@ import com.arghya.buddyonthego.reminder.Reschedule
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.ZoneId
-import java.util.Locale
 
 /** ALM-4: AlarmManager fires this; it starts RingService and arms the next occurrence. */
 class AlarmReceiver : BroadcastReceiver() {
@@ -26,12 +25,12 @@ class AlarmReceiver : BroadcastReceiver() {
                 val dao = ServiceLocator.db.alarmDao()
                 val a = dao.get(id)
                 if (a != null && ServiceLocator.settings.modAlarm) {
-                    val time = String.format(Locale.US, "%02d:%02d", a.hour, a.minute)
+                    val time = com.arghya.buddyonthego.ui.Fmt.time(a.hour, a.minute, ServiceLocator.settings.h12)
                     RingService.start(
                         ctx, RingKind.TIME, a.label.ifBlank { "Alarm" }, "It is $time.",
                         ownerId = a.id, snoozeCount = count, maxSnoozes = a.maxSnoozes,
                         snoozeMinutes = a.snoozeMinutes, rampSec = a.volumeRampSeconds,
-                        vibe = a.vibrationPattern, challenge = a.challengeType,
+                        vibe = a.vibrationPattern, challenge = a.challengeType, mathLevel = a.mathDifficulty,
                     )
                     if (!isSnooze) {
                         if (a.daysMask == 0) {
